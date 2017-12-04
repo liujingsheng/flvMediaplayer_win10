@@ -11,7 +11,7 @@
 
         <Grid.RowDefinitions>
             <RowDefinition Height="50">
-                
+
             </RowDefinition>
             <RowDefinition></RowDefinition>
         </Grid.RowDefinitions>
@@ -26,7 +26,16 @@
             <Button Name="SaveButton" Width="80" Content="Save" Click="SaveButton_ClickAsync" Margin="5"></Button>
             <Button Name="StopSaveButton" Width="80" Content="StopSave" Click="StopSaveButton_ClickAsync" Margin="5"></Button>
             <Button Name="FullScreenButton" Width="80" Content="FullScreen" Click="FullScreenButton_Click" Margin="5"></Button>
-        </StackPanel>
-        <MediaPlayerElement Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"  Name="mediaElement" Stretch="Fill"  ></MediaPlayerElement>
-    </Grid>
+        </StackPanel>    
+        <ScrollViewer Name="ScrollViewerMain" Grid.Row="1"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" ZoomMode="Enabled"  MinZoomFactor="1" SizeChanged="ScrollViewerMain_SizeChanged">
+                <MediaPlayerElement Stretch="Fill" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Name="mediaElement" ManipulationMode="TranslateX, TranslateY" ManipulationDelta="Img_ManipulationDelta" >
+                    <MediaPlayerElement.RenderTransform>
+                        <CompositeTransform x:Name="Transform" />
+                    </MediaPlayerElement.RenderTransform>
+                </MediaPlayerElement>
+            </ScrollViewer>
+
+        </Grid>
+     
+ 
 </Page>

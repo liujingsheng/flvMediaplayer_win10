@@ -116,8 +116,7 @@ namespace MediaPlay
         public void OnSampleRequested(MediaStreamSource sender, MediaStreamSourceSampleRequestedEventArgs args)
         {
 
-            args.Request.Sample= _sampleProvider.GetNextSample();
-            var config = new StreamCoders.Decoder.VideoDecoderConfiguration();
+            args.Request.Sample= _sampleProvider.GetNextSample();    
  
         }
         private void OnClosed(MediaStreamSource sender, MediaStreamSourceClosedEventArgs args)

@@ -21,6 +21,7 @@ using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
 using Windows.System.Display;
+using Windows.UI.Core;
 using Windows.UI.Notifications;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
@@ -49,7 +50,7 @@ namespace MediaPlay
         CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
         private DataReader _reader;
         private bool Stoped = false;
- 
+
         private readonly DisplayRequest _displayRequest = new DisplayRequest();
 
 
@@ -58,9 +59,9 @@ namespace MediaPlay
             this.InitializeComponent();
             ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.FullScreen;
             _displayRequest.RequestActive();
-     
-  
-  
+            SystemNavigationManager.GetForCurrentView().AppViewBackButtonVisibility = AppViewBackButtonVisibility.Visible;
+
+
             //var videoProperties = VideoEncodingProperties.CreateH264();
             //var videoStreamDec = new VideoStreamDescriptor(videoProperties);
             //mss = new MediaStreamSource(videoStreamDec);
@@ -276,7 +277,7 @@ namespace MediaPlay
         }
         private async Task SaveCurrentFrame()
         {
-       
+
             RenderTargetBitmap renderTargetBitmap = new RenderTargetBitmap();
             await renderTargetBitmap.RenderAsync(mediaElement, 1920, 1080);
             var pixelBuffer = await renderTargetBitmap.GetPixelsAsync();
@@ -328,7 +329,7 @@ namespace MediaPlay
             uint frameWidth = 1920;
             ///
 
-      
+
             //Use Windows.Media.Editing to get ImageStream
             var clip = await MediaClip.CreateFromFileAsync(pickedFile);
             var composition = new MediaComposition();
@@ -379,28 +380,28 @@ namespace MediaPlay
             if (view.IsFullScreenMode)
             {
                 view.ExitFullScreenMode();
-              
+
             }
             else
             {
                 if (view.TryEnterFullScreenMode())
                 {
-                  
+
                 }
                 else
                 {
-                   
+
                 }
             }
         }
 
         public void ShowToast(string msg, string subMsg = null)
         {
-    
+
 
             Debug.WriteLine(msg + "\n" + subMsg);
 
-       
+
 
             var toastXml = ToastNotificationManager.GetTemplateContent(ToastTemplateType.ToastText02);
 
@@ -413,5 +414,24 @@ namespace MediaPlay
         }
 
 
+
+        private void Img_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
+
+        {
+          var ct=  mediaElement.RenderTransform as CompositeTransform;
+            ct.TranslateX += e.Delta.Translation.X;
+            ct.TranslateY += e.Delta.Translation.Y;
+
+        }
+
+        private void ScrollViewerMain_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            mediaElement.MaxWidth = ((ScrollViewer)sender).ViewportWidth;
+            mediaElement.MaxHeight = ((ScrollViewer)sender).ViewportHeight;
+            var ct = mediaElement.RenderTransform as CompositeTransform;
+            ct.TranslateX = 0;
+            ct.TranslateY = 0;
+            ((ScrollViewer)sender).ChangeView(0, 0, 1);
+        }
     }
 }
