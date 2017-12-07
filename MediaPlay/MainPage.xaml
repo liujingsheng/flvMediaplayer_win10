@@ -6,9 +6,14 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
+    <Page.BottomAppBar>
+        <AppBar>
+            <AppBarButton Label="Refresh" Icon="Refresh" />               
+        </AppBar>
+    </Page.BottomAppBar>
 
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-
+       
         <Grid.RowDefinitions>
             <RowDefinition Height="50">
 
@@ -26,16 +31,16 @@
             <Button Name="SaveButton" Width="80" Content="Save" Click="SaveButton_ClickAsync" Margin="5"></Button>
             <Button Name="StopSaveButton" Width="80" Content="StopSave" Click="StopSaveButton_ClickAsync" Margin="5"></Button>
             <Button Name="FullScreenButton" Width="80" Content="FullScreen" Click="FullScreenButton_Click" Margin="5"></Button>
-        </StackPanel>    
-        <ScrollViewer Name="ScrollViewerMain" Grid.Row="1"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" ZoomMode="Enabled"  MinZoomFactor="1" SizeChanged="ScrollViewerMain_SizeChanged">
-                <MediaPlayerElement Stretch="Fill" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Name="mediaElement" ManipulationMode="TranslateX, TranslateY" ManipulationDelta="Img_ManipulationDelta" >
-                    <MediaPlayerElement.RenderTransform>
-                        <CompositeTransform x:Name="Transform" />
-                    </MediaPlayerElement.RenderTransform>
-                </MediaPlayerElement>
-            </ScrollViewer>
+        </StackPanel>
+        <ScrollViewer Name="ScrollViewerMain" Grid.Row="1"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" ZoomMode="Enabled"  MinZoomFactor="1" SizeChanged="ScrollViewerMain_SizeChanged" Visibility="Visible">
+            <MediaPlayerElement Stretch="Fill" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Name="mediaElement" ManipulationMode="TranslateX, TranslateY" ManipulationDelta="Img_ManipulationDelta" Visibility="Visible">
+                <MediaPlayerElement.RenderTransform>
+                    <CompositeTransform x:Name="Transform" />
+                </MediaPlayerElement.RenderTransform>
+            </MediaPlayerElement>
+           
+        </ScrollViewer>
+        <MediaElement Name="MediaElementO" Grid.Row="1" AutoPlay="True" Visibility="Collapsed"></MediaElement>
 
-        </Grid>
-     
- 
+    </Grid>
 </Page>

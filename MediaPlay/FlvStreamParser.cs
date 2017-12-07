@@ -5,9 +5,97 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Windows.Storage.Streams;
-
+using System.Runtime.InteropServices.WindowsRuntime;
 namespace MediaPlay
 {
+    // 简化的AudioSpecificConfig 2字节定义如下：AAC Profile 5bits | 采样率 4bits | 声道数 4bits | 其他 3bits |
+    public class AudioInfo
+    {
+        static uint[] SamplingFrequencyTable = {
+  96000, 88200, 64000, 48000,
+  44100, 32000, 24000, 22050,
+  16000, 12000, 11025, 8000,
+  7350,  0,     0,      0
+};
+        public bool IsReady { get; set; }
+        private byte[] payload;
+        public uint Profile
+        {
+            get
+            {
+                var profile = ((payload[0] & 0xF8) >> 3);
+                return (uint)profile;
+
+            }
+        }
+        public void SetData(byte[] data)
+        {
+            payload = data;
+        }
+        public uint SampleRate
+        {
+            get
+            {
+                if (payload == null)
+                    return 0;
+                var samplingFrequencyIndex = ((payload[0] & 0x7) << 1) | (payload[1] >> 7);
+                return SamplingFrequencyTable[samplingFrequencyIndex];
+
+            }
+        }
+        public uint ChannleCount
+        {
+            get
+            {
+                if (payload == null)
+                    return 0;
+                var channel = (payload[1] >> 3) & 0x0F;
+                return (uint)channel;
+
+            }
+        }
+        public uint BitRate
+        {
+            get
+            {   //todo:add BitiRate Calcuate;             
+                return 0;
+            }
+        }
+        public uint FrameLengthFlag
+        {
+            get
+            {
+                if (payload == null)
+                    return 0;
+                var frameLengthFlag = (payload[1] >> 2) & 0x01;
+                return (uint)frameLengthFlag;
+
+            }
+        }
+        public uint DependsOnCoreCoder
+        {
+            get
+            {
+                if (payload == null)
+                    return 0;
+                var dependsOnCoreCoder = (payload[1] >> 1) & 0x01;
+                return (uint)dependsOnCoreCoder;
+
+            }
+        }
+        public uint ExtensionFlag
+        {
+            get
+            {
+                if (payload == null)
+                    return 0;
+                var extensionFlag = payload[1] & 0x01;
+                return (uint)extensionFlag;
+
+            }
+        }
+    }
+
     public class FLVHeader
     {
         public byte[] signature;
@@ -54,6 +142,36 @@ namespace MediaPlay
                 return dataoffset;
             }
         }
+    }
+
+    public enum VideoCodecType
+    {
+        Sorenson_H263 = 2,
+        Screen_video = 3,
+        On2_VP6 = 4,
+        On2_VP6_with_alpha_channel = 5,
+        Screen_video_version2 = 6,
+        AVC = 7,
+        Unknow=0xff
+    }
+
+    public enum AudioCodecType
+    {
+        Linear_PCM_platform_endian = 0x00,
+        ADPCM = 0x01,
+        MP3 = 0x02,
+        Linear_PCM_little_endian = 0x03,
+        Nellymoser_16_kHz_mono = 0x04,
+        Nellymoser_8_kHz_mono = 0x05,
+        Nellymoser = 0x06,
+        G711_Alaw_logarithmic_PCM = 0x07,
+        G711_mulaw_logarithmic_PCM = 0x08,
+        reserved = 0x09,
+        AAC = 0x0A,
+        Speex = 0x0B,
+        MP3_8Khz = 0x0E,
+        Device_specific_sound = 0x0F,
+        Unknow = 0xff
     }
     public enum TagType
     {
@@ -369,11 +487,17 @@ namespace MediaPlay
     {
         private DataReader _reader;
         private byte[] _naluHeader = new byte[] { 0, 0, 0, 1 };
-        private uint _pts1 = 0;
-        private uint _pts2 = 0;
-        private uint count = 0;
+        private uint _audioPts1 = 0;
+        private uint _audioPts2 = 0;
+        private uint _audioCount = 0;
+        private uint _videoPts1 = 0;
+        private uint _videoPts2 = 0;
+        private uint _videoCount = 0;
         public FLVHeader Header;
         public byte[] SPSPPS;
+        public AudioInfo AudioInfo;
+        public VideoCodecType VideoCodecType=VideoCodecType.Unknow;
+        public AudioCodecType AudioCodecType=AudioCodecType.Unknow;
 
         public FlvStreamParser(IInputStream stream)
         {
@@ -400,8 +524,9 @@ namespace MediaPlay
         public async Task<FlvTag> ReadTagAsync()
         {
 
-            FlvTag tag;
-            await _reader.LoadAsync(4);
+            FlvTag tag = null;
+            var loadsize = await _reader.LoadAsync(4);
+        
             var presize = _reader.ReadUInt32();
             await _reader.LoadAsync(11);
             int type = _reader.ReadByte();
@@ -418,63 +543,128 @@ namespace MediaPlay
             tag.datasize = ReadUI24(_reader);
             tag.timestamp = ReadUI24(_reader);
             tag.timestamp_ex = _reader.ReadByte();
-
-            if (count % 2 == 0)
+            if (type == 8)
             {
-                _pts1 = tag.TimeStamp;
+
+                if (_audioCount % 2 == 0)
+                {
+                    _audioPts1 = tag.TimeStamp;
+                }
+                else
+                {
+                    _audioPts2 = tag.TimeStamp;
+
+                }
+                _audioCount++;
+                tag.PtsInterval = _audioCount > 0 ? (uint)Math.Abs((int)(_audioPts2 - _audioPts1)) : 0;
+                tag.PtsInterval = tag.PtsInterval > 500 ? 40 : tag.PtsInterval;
             }
-            else
+            else if (type == 9)
             {
-                _pts2 = tag.TimeStamp;
 
-            }         
-            count++;          
-            tag.PtsInterval = count > 0 ? (uint)Math.Abs((int)(_pts2 - _pts1)) : 0;
-            tag.PtsInterval = tag.PtsInterval > 500 ? 40 : tag.PtsInterval;
+                if (_videoCount % 2 == 0)
+                {
+                    _videoPts1 = tag.TimeStamp;
+                }
+                else
+                {
+                    _videoPts2 = tag.TimeStamp;
+
+                }
+                _videoCount++;
+                tag.PtsInterval = _videoCount > 0 ? (uint)Math.Abs((int)(_videoPts1 - _videoPts2)) : 0;
+                tag.PtsInterval = tag.PtsInterval > 500 ? 40 : tag.PtsInterval;
+            }
+
             tag.streamid = ReadUI24(_reader);
             await _reader.LoadAsync(tag.datasize);
 
             if (tag is ScriptTag)
             {
-
-
+                _reader.ReadBuffer(tag.datasize);
             }
             else if (tag is AudioTag)
             {
+
                 tag.taginfo = _reader.ReadByte();
+                var taga = tag as AudioTag;
+                if (AudioCodecType == AudioCodecType.Unknow)
+                {
+                    AudioCodecType = (AudioCodecType)(taga.CodecId);
+                }
+                //如果acc编码
+                if (taga.CodecId == (double)AudioCodecType.AAC)
+                {
+                    var aacSequenceHeader = _reader.ReadByte();
+                    //aacSequenceHeader == 0 startAcc Sequence
+                    if (aacSequenceHeader == 0)
+                    {
+                        byte[] payload = new byte[2];
+                        _reader.ReadBytes(payload);
+                        AudioInfo audioInfo = new MediaPlay.AudioInfo();
+                        audioInfo.SetData(payload);
+                        this.AudioInfo = audioInfo;
+
+                    }
+                    else
+                    {
+                        var buf = _reader.ReadBuffer(tag.datasize - 2);
+                        tag.data = buf.ToArray();
+
+                    }
+
+                }
+                else
+                {
+                    throw new Exception("Unsuport Audio Codec, not AAC");
+                }
+
+
 
             }
             else if (tag is VideoTag)
             {
                 tag.taginfo = _reader.ReadByte();
-                tag.avcpaktype = _reader.ReadByte();
-                var compositionTime = ReadUI24(_reader);
-                if (tag.avcpaktype == 1)
+                var taga = tag as VideoTag;
+                if(VideoCodecType == VideoCodecType.Unknow)
                 {
-                    uint naluSize = _reader.ReadUInt32();
-                    byte[] size = new byte[naluSize];
-                    _reader.ReadBytes(size);
-                    var data = _naluHeader.Concat(size);
-                    tag.data = data.ToArray();
+                    VideoCodecType = (VideoCodecType)(taga.CodecId);
+                }           
+                if(VideoCodecType==VideoCodecType.AVC)
+                {
+                    tag.avcpaktype = _reader.ReadByte();
+                    var compositionTime = ReadUI24(_reader);
+                    if (tag.avcpaktype == 1)
+                    {
+                        uint naluSize = _reader.ReadUInt32();
+                        byte[] size = new byte[naluSize];
+                        _reader.ReadBytes(size);
+                        var data = _naluHeader.Concat(size);
+                        tag.data = data.ToArray();
+                    }
+                    else
+                    {
+
+                        byte[] data1 = new byte[6];
+                        _reader.ReadBytes(data1);
+                        uint spsSize = _reader.ReadUInt16();
+                        byte[] spsdata = new byte[spsSize];
+                        _reader.ReadBytes(spsdata);
+                        byte interbyter = _reader.ReadByte();
+                        uint ppsSize = _reader.ReadUInt16();
+                        byte[] ppsdata = new byte[ppsSize];
+                        _reader.ReadBytes(ppsdata);
+                        var sps = _naluHeader.Concat(spsdata);
+                        var pps = _naluHeader.Concat(ppsdata);
+                        tag.data = sps.Concat(pps).ToArray();
+                        SPSPPS = tag.data;
+                    }
                 }
                 else
                 {
-
-                    byte[] data1 = new byte[6];
-                    _reader.ReadBytes(data1);
-                    uint spsSize = _reader.ReadUInt16();
-                    byte[] spsdata = new byte[spsSize];
-                    _reader.ReadBytes(spsdata);
-                    byte interbyter = _reader.ReadByte();
-                    uint ppsSize = _reader.ReadUInt16();
-                    byte[] ppsdata = new byte[ppsSize];
-                    _reader.ReadBytes(ppsdata);
-                    var sps = _naluHeader.Concat(spsdata);
-                    var pps = _naluHeader.Concat(ppsdata);
-                    tag.data = sps.Concat(pps).ToArray();
-                    SPSPPS = tag.data;
+                    throw new Exception("Unsuport Video Codec, not Avc");
                 }
-
+              
             }
             return tag;
 

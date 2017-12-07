@@ -57,11 +57,12 @@ namespace MediaPlay
         public MainPage()
         {
             this.InitializeComponent();
-            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.FullScreen;
+            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
             _displayRequest.RequestActive();
             SystemNavigationManager.GetForCurrentView().AppViewBackButtonVisibility = AppViewBackButtonVisibility.Visible;
-
-
+            Windows.UI.ViewManagement.ApplicationView.GetForCurrentView().IsScreenCaptureEnabled = false;
+            mediaElement.ExitDisplayModeOnAccessKeyInvoked=true;
+        
             //var videoProperties = VideoEncodingProperties.CreateH264();
             //var videoStreamDec = new VideoStreamDescriptor(videoProperties);
             //mss = new MediaStreamSource(videoStreamDec);
@@ -209,11 +210,21 @@ namespace MediaPlay
             filePicker.FileTypeFilter.Add("*");
 
             StorageFile file = await filePicker.PickSingleFileAsync();
-            IRandomAccessStream readStream = await file.OpenAsync(FileAccessMode.Read);
-            _reader = new DataReader(readStream);
-            //mediaElement.SetMediaStreamSource(mss);
-            // mediaElement.Play();
-            Stoped = false;
+            IRandomAccessStream readStream = await file.OpenAsync(FileAccessMode.Read);     
+            var flvMSS = await FLVMSS.CreateMSSFromRandomAccessStream(readStream);
+            if (flvMSS != null)
+            {
+                mss = flvMSS.GetMediaStreamSource();
+                //MediaElementO.SetMediaStreamSource(mss);
+                //MediaElementO.Play();
+
+                var source = MediaSource.CreateFromMediaStreamSource(mss);
+                var mediaPlayer = new MediaPlayer();
+                mediaPlayer.Source = source;
+                mediaElement.SetMediaPlayer(mediaPlayer);
+                mediaPlayer.Play();
+                Stoped = false;
+            }
         }
 
         private async void SaveButton_ClickAsync(object sender, RoutedEventArgs e)
@@ -223,7 +234,7 @@ namespace MediaPlay
             _ws = new StreamWebSocket();
             await _ws.ConnectAsync(new Uri(_uri, UriKind.Absolute));
             var filePicker = new FileSavePicker();
-            filePicker.FileTypeChoices.Add("raw H264", new List<string>() { ".h264" });
+            filePicker.FileTypeChoices.Add("flv", new List<string>() { ".flv" });
             filePicker.SuggestedStartLocation = PickerLocationId.VideosLibrary;
 
             StorageFile file = await filePicker.PickSaveFileAsync();
@@ -272,7 +283,7 @@ namespace MediaPlay
 
         private async void SnapButton_ClickAsync(object sender, RoutedEventArgs e)
         {
-            await SnapCurrentFrameAsync();
+            await SaveCurrentFrame();
 
         }
         private async Task SaveCurrentFrame()
@@ -302,76 +313,10 @@ namespace MediaPlay
 
                 await encoder.FlushAsync();
             }
+            var success = await Windows.System.Launcher.LaunchFileAsync(saveFile);
         }
 
-        private async Task SnapCurrentFrameAsync()
-        {
-            TimeSpan timeOfFrame = new TimeSpan(0, 0, 1);//one sec
 
-            //pick mp4 file
-            var picker = new Windows.Storage.Pickers.FileOpenPicker();
-            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.VideosLibrary;
-            picker.FileTypeFilter.Add("*");
-            StorageFile pickedFile = await picker.PickSingleFileAsync();
-            if (pickedFile == null)
-            {
-                return;
-            }
-            ///
-
-
-            //Get video resolution
-            List<string> encodingPropertiesToRetrieve = new List<string>();
-            encodingPropertiesToRetrieve.Add("System.Video.FrameHeight");
-            encodingPropertiesToRetrieve.Add("System.Video.FrameWidth");
-            IDictionary<string, object> encodingProperties = await pickedFile.Properties.RetrievePropertiesAsync(encodingPropertiesToRetrieve);
-            uint frameHeight = 1080;
-            uint frameWidth = 1920;
-            ///
-
-
-            //Use Windows.Media.Editing to get ImageStream
-            var clip = await MediaClip.CreateFromFileAsync(pickedFile);
-            var composition = new MediaComposition();
-            composition.Clips.Add(clip);
-
-            var imageStream = await composition.GetThumbnailAsync(timeOfFrame, (int)frameWidth, (int)frameHeight, VideoFramePrecision.NearestFrame);
-            ///
-
-
-            //generate bitmap 
-            var writableBitmap = new WriteableBitmap((int)frameWidth, (int)frameHeight);
-            writableBitmap.SetSource(imageStream);
-
-
-            //generate some random name for file in PicturesLibrary
-            var saveAsTarget = await KnownFolders.PicturesLibrary.CreateFileAsync("IMG" + Guid.NewGuid().ToString().Substring(0, 4) + ".jpg");
-
-
-            //get stream from bitmap
-            Stream stream = writableBitmap.PixelBuffer.AsStream();
-            byte[] pixels = new byte[(uint)stream.Length];
-            await stream.ReadAsync(pixels, 0, pixels.Length);
-
-            using (var writeStream = await saveAsTarget.OpenAsync(FileAccessMode.ReadWrite))
-            {
-                var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, writeStream);
-                encoder.SetPixelData(
-                    BitmapPixelFormat.Bgra8,
-                    BitmapAlphaMode.Premultiplied,
-                    (uint)writableBitmap.PixelWidth,
-                    (uint)writableBitmap.PixelHeight,
-                    96,
-                    96,
-                    pixels);
-                await encoder.FlushAsync();
-
-                using (var outputStream = writeStream.GetOutputStreamAt(0))
-                {
-                    await outputStream.FlushAsync();
-                }
-            }
-        }
 
         private void FullScreenButton_Click(object sender, RoutedEventArgs e)
         {
@@ -386,7 +331,7 @@ namespace MediaPlay
             {
                 if (view.TryEnterFullScreenMode())
                 {
-
+                    mediaElement.IsFullWindow = true;
                 }
                 else
                 {
@@ -418,7 +363,9 @@ namespace MediaPlay
         private void Img_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
 
         {
-          var ct=  mediaElement.RenderTransform as CompositeTransform;
+            Window.Current.CoreWindow.PointerCursor = new Windows.UI.Core.CoreCursor(Windows.UI.Core.CoreCursorType.Hand, 1);
+
+            var ct =  mediaElement.RenderTransform as CompositeTransform;
             ct.TranslateX += e.Delta.Translation.X;
             ct.TranslateY += e.Delta.Translation.Y;
 

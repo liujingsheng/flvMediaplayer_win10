@@ -22,7 +22,7 @@ namespace MediaPlay
     {
         private AudioStreamDescriptor audioStreamDescriptor;
         private VideoStreamDescriptor videoStreamDescriptor;
-     
+
         private string videoCodecName;
         private string audioCodecName;
         private MediaStreamSource mss;
@@ -41,59 +41,133 @@ namespace MediaPlay
         }
         public static async Task<FLVMSS> CreateMSSFromWebSocketAsync(string uri)
         {
-            var flvmss=  new FLVMSS();
+            var flvmss = new FLVMSS();
             flvmss._ws = new StreamWebSocket();
             try
             {
-              
                 await flvmss._ws.ConnectAsync(new Uri(uri, UriKind.Absolute));
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
                 return null;
             }
-        
-            flvmss._reader = new DataReader(flvmss._ws.InputStream);
+
+            return await CreateMSSFromRandomIInputStream(flvmss._ws.InputStream);
+
+        }
+        public static async Task<FLVMSS> CreateMSSFromRandomAccessStream(IRandomAccessStream stream)
+        {
+
+            var reader = new DataReader(stream);
+            return await CreateMSSFromRandomDataReader(reader);
+
+        }
+        public static async Task<FLVMSS> CreateMSSFromRandomIInputStream(IInputStream stream)
+        {
+
+            var reader = new DataReader(stream);
+            return await CreateMSSFromRandomDataReader(reader,true);
+
+        }
+        public static async Task<FLVMSS> CreateMSSFromRandomDataReader(DataReader reader, bool isAlive=false)
+        {
+            var flvmss = new FLVMSS();
+            flvmss._reader = reader;
             flvmss._flvStreamParser = new FlvStreamParser(flvmss._reader);
             flvmss._sampleProvider = new FlvSampleProvider(flvmss._flvStreamParser);
-            var header= await flvmss._sampleProvider.ReadFlvHeaderAsync();
-            if(header==null)
+            flvmss._sampleProvider.IsAlive = isAlive;
+           var header = await flvmss._sampleProvider.ReadFlvHeaderAsync();
+            flvmss._sampleProvider.StartQueueTags();
+            if (header == null)
             {
                 Debug.WriteLine("flv header error!");
                 return null;
 
             }
-            flvmss._sampleProvider.StartQueueTags();
-            flvmss.CreateVideoStreamDescriptor();
-            flvmss.InitializeFLVMSS();
-         
-            return flvmss;
+            if (header.HasVideo)
+            {
+                SpinWait.SpinUntil(() => flvmss._flvStreamParser.VideoCodecType != VideoCodecType.Unknow);
+                flvmss.CreateVideoStreamDescriptor(flvmss._flvStreamParser.VideoCodecType);
+
+            }
+
+            if (header.HasAudio)
+            {
+                SpinWait.SpinUntil(() => flvmss._flvStreamParser.AudioInfo != null && flvmss._flvStreamParser.AudioCodecType != AudioCodecType.Unknow);
+                var audioinfo = flvmss._flvStreamParser.AudioInfo;
+                flvmss.CreateAudioStreamDescriptor(flvmss._flvStreamParser.AudioCodecType, audioinfo.SampleRate, audioinfo.ChannleCount, 0);
+            }
+
+            bool result = flvmss.InitializeFLVMSS(isAlive);
+            if (result)
+            {
+
+                return flvmss;
+            }
+            else
+            {
+                return null;
+            }
 
         }
-        private void InitializeFLVMSS()
+
+        private bool InitializeFLVMSS(bool isLive=false)
         {
-            
-            mss = new MediaStreamSource(videoStreamDescriptor);
-            mss.BufferTime = TimeSpan.FromMilliseconds(200);
+            if (videoStreamDescriptor != null)
+            {
+                mss = new MediaStreamSource(videoStreamDescriptor);
+
+            }
+            else
+            {
+                return false;
+            }
+
+            if (audioStreamDescriptor != null)
+            {
+                mss.AddStreamDescriptor(audioStreamDescriptor);
+            }
+
+            mss.BufferTime = TimeSpan.FromMilliseconds(0);
             mss.Starting += OnStarting;
             mss.Closed += OnClosed;
             mss.SampleRequested += OnSampleRequested;
             mss.Paused += Mss_Paused;
-     
+            mss.IsLive = isLive;
+            return true;
 
         }
 
- 
 
-        private void CreateAudioStreamDescriptor()
+
+        private void CreateAudioStreamDescriptor(AudioCodecType type, uint sampleRate, uint channelCount, uint bitRate)
         {
+            if (type == AudioCodecType.AAC)
+            {
+                var audioProperties = AudioEncodingProperties.CreateAac(sampleRate, channelCount, bitRate);
+                audioStreamDescriptor = new AudioStreamDescriptor(audioProperties);
+            }
+            else
+            {
+
+                throw new Exception("Unsupport Audio Codec");
+            }
+
 
         }
-        private void CreateVideoStreamDescriptor()
+        private void CreateVideoStreamDescriptor(VideoCodecType type)
         {
-            var videoProperties = VideoEncodingProperties.CreateH264();
-            videoStreamDescriptor = new VideoStreamDescriptor(videoProperties);
+            if (type == VideoCodecType.AVC)
+            {
+                var videoProperties = VideoEncodingProperties.CreateH264();
+                videoStreamDescriptor = new VideoStreamDescriptor(videoProperties);
+            }
+            else
+            {
+                throw new Exception("Unsupport Video Codec");
+            }
+
         }
 
         public MediaStreamSource GetMediaStreamSource()
@@ -115,9 +189,20 @@ namespace MediaPlay
         }
         public void OnSampleRequested(MediaStreamSource sender, MediaStreamSourceSampleRequestedEventArgs args)
         {
+            if (args.Request.StreamDescriptor is VideoStreamDescriptor)
+            {
+                args.Request.Sample = _sampleProvider.GetNextVideoSample();
 
-            args.Request.Sample= _sampleProvider.GetNextSample();    
- 
+            }
+            else if (args.Request.StreamDescriptor is AudioStreamDescriptor)
+            {
+                args.Request.Sample = _sampleProvider.GetNextAudioSample();
+            }
+            else
+            {
+                args.Request.Sample = null;
+            }
+
         }
         private void OnClosed(MediaStreamSource sender, MediaStreamSourceClosedEventArgs args)
         {
@@ -126,16 +211,19 @@ namespace MediaPlay
             mss.SampleRequested -= OnSampleRequested;
             mss = null;
 
-            _sampleProvider.cancellationTokenSource.Cancel();
+            _sampleProvider?.cancellationTokenSource.Cancel();
             _sampleProvider = null;
             _flvStreamParser = null;
-            _reader.Dispose();
+            _reader?.Dispose();
             _reader = null;
-      
-            _ws.Close(1005, string.Empty);
-            _ws.Dispose();
-            _ws = null;        
-          
+
+            if (_ws != null)
+            {
+                _ws.Close(1005, string.Empty);
+                _ws.Dispose();
+                _ws = null;
+
+            }
 
         }
 

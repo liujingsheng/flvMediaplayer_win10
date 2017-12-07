@@ -13,19 +13,21 @@ namespace MediaPlay
 {
     public class FlvSampleProvider
     {
-        public ConcurrentQueue<FlvTag> TagQueue;
+        public ConcurrentQueue<VideoTag> VideoTagQueue;
+        public ConcurrentQueue<AudioTag> AudioTagQueue;
         public CancellationTokenSource cancellationTokenSource;
         public FlvStreamParser FlvStreamParser;
         private TimeSpan pts;
-        private SpinWait spinWait = new SpinWait();     
         private Stopwatch watch = new Stopwatch();
         public bool Paused = false;
+        public bool IsAlive = false;
 
         public FlvSampleProvider(FlvStreamParser flvStreamParser)
         {
             FlvStreamParser = flvStreamParser;
             cancellationTokenSource = new CancellationTokenSource();
-            TagQueue = new ConcurrentQueue<FlvTag>();
+            VideoTagQueue = new ConcurrentQueue<VideoTag>();
+            AudioTagQueue = new ConcurrentQueue<AudioTag>();
             pts = TimeSpan.FromMilliseconds(0);
         }
         public async Task<FLVHeader> ReadFlvHeaderAsync()
@@ -43,50 +45,129 @@ namespace MediaPlay
 
             return header;
         }
-        public MediaStreamSample GetNextSample()
+        public MediaStreamSample GetNextVideoSample()
         {
 
-            var tag = PopTag();
-            pts += TimeSpan.FromMilliseconds(tag.PtsInterval);
+            var tag = PopVideoTag();
+            //pts += TimeSpan.FromMilliseconds(tag.PtsInterval);
+            pts = TimeSpan.FromMilliseconds(tag.TimeStamp);
             var sample = MediaStreamSample.CreateFromBuffer(tag.data.AsBuffer(), pts);
+            sample.Duration = TimeSpan.FromMilliseconds(tag.PtsInterval);
+
+            return sample;
+
+        }
+        public MediaStreamSample GetNextAudioSample()
+        {
+
+            var tag = PopAudioTag();
+            //pts += TimeSpan.FromMilliseconds(tag.PtsInterval);
+            pts = TimeSpan.FromMilliseconds(tag.TimeStamp);
+            var sample = MediaStreamSample.CreateFromBuffer(tag.data.AsBuffer(), pts);
+            sample.DecodeTimestamp = pts;
+
             sample.Duration = TimeSpan.FromMilliseconds(tag.PtsInterval);
             return sample;
 
         }
         public void StartQueueTags()
         {
-
-
             var task = Task.Run(async () =>
             {
+
                 while (!cancellationTokenSource.IsCancellationRequested)
                 {
+                    FlvTag tag = null;
+                    try
+                    {
+                         tag = await FlvStreamParser.ReadTagAsync();
+                    }
+                    catch
+                    {
+                        Debug.WriteLine("ReadTagAsync failed!");
+                        break;
+                    }
+                  
+                    if (tag == null)
+                        break;
 
-                    spinWait.SpinOnce();
-                    var tag = await FlvStreamParser.ReadTagAsync();
-                    
                     if (!Paused)
-                        TagQueue.Enqueue(tag);
-             
+                    {
+                        if (tag.Type == TagType.Video)
+                        {
+
+                            VideoTagQueue.Enqueue((VideoTag)tag);
+                            Debug.WriteLine($"Video Enqueue length: {VideoTagQueue.Count}");
+                        }
+                        else if (tag.Type == TagType.Audio)
+                        {
+
+                            AudioTagQueue.Enqueue((AudioTag)tag);
+                            Debug.WriteLine($"Audio Enqueue length: {AudioTagQueue.Count}");
+                        }
+                        else if (tag.Type == TagType.Script)
+                        {
+                            //todo
+                        }
+                        else
+                        {
+                            //todo
+                        }
+
+                    }
+                    if (!IsAlive)
+                    {
+                        if ((AudioTagQueue.Count) > 10)
+                            await Task.Delay(50);
+                        else
+                            await Task.Delay(1);
+                    }
 
                 }
+
 
 
             }, cancellationTokenSource.Token);
 
 
         }
-        public FlvTag PopTag()
+        public VideoTag PopVideoTag()
         {
 
-            FlvTag tag = null;
-            Debug.WriteLine($"queue length: {TagQueue.Count}");
-            SpinWait.SpinUntil(() => !TagQueue.IsEmpty);
-            TagQueue.TryDequeue(out tag);
-            if (TagQueue.Count > 50)
+            VideoTag tag = null;
+            Debug.WriteLine($"Video Dequeue length: {VideoTagQueue.Count}");
+            SpinWait.SpinUntil(() => !VideoTagQueue.IsEmpty);
+            VideoTagQueue.TryDequeue(out tag);
+            if (tag == null)
             {
-                tag.PtsInterval = tag.PtsInterval > 0 ? 0 : tag.PtsInterval;
+
             }
+            if (tag.data == null)
+            {
+
+            }
+            //if (TagQueue.Count > 50)
+            //{
+            //    tag.PtsInterval = tag.PtsInterval > 0 ? 0 : tag.PtsInterval;
+            //}
+            return tag;
+        }
+        public AudioTag PopAudioTag()
+        {
+
+            AudioTag tag = null;
+            Debug.WriteLine($"Audio Dequeue length: {AudioTagQueue.Count}");
+            SpinWait.SpinUntil(() => !AudioTagQueue.IsEmpty);
+            AudioTagQueue.TryDequeue(out tag);
+            if (tag.data == null)
+            {
+                SpinWait.SpinUntil(() => !AudioTagQueue.IsEmpty);
+                AudioTagQueue.TryDequeue(out tag);
+            }
+            //if (TagQueue.Count > 50)
+            //{
+            //    tag.PtsInterval = tag.PtsInterval > 0 ? 0 : tag.PtsInterval;
+            //}
             return tag;
         }
     }
