@@ -49,10 +49,11 @@ namespace MediaPlay
         {
 
             var tag = PopVideoTag();
-            //pts += TimeSpan.FromMilliseconds(tag.PtsInterval);
+            // pts += TimeSpan.FromMilliseconds(tag.PtsInterval);
             pts = TimeSpan.FromMilliseconds(tag.TimeStamp);
             var sample = MediaStreamSample.CreateFromBuffer(tag.data.AsBuffer(), pts);
-            sample.Duration = TimeSpan.FromMilliseconds(tag.PtsInterval);
+            // sample.KeyFrame = tag.FrameType == FrameType.keyframe ? true : false;
+            // sample.Duration = TimeSpan.FromMilliseconds(tag.PtsInterval);
 
             return sample;
 
@@ -64,9 +65,9 @@ namespace MediaPlay
             //pts += TimeSpan.FromMilliseconds(tag.PtsInterval);
             pts = TimeSpan.FromMilliseconds(tag.TimeStamp);
             var sample = MediaStreamSample.CreateFromBuffer(tag.data.AsBuffer(), pts);
-            sample.DecodeTimestamp = pts;
+            //sample.DecodeTimestamp = pts;
 
-            sample.Duration = TimeSpan.FromMilliseconds(tag.PtsInterval);
+           // sample.Duration = TimeSpan.FromMilliseconds(tag.PtsInterval);
             return sample;
 
         }
@@ -80,14 +81,14 @@ namespace MediaPlay
                     FlvTag tag = null;
                     try
                     {
-                         tag = await FlvStreamParser.ReadTagAsync();
+                        tag = await FlvStreamParser.ReadTagAsync();
                     }
                     catch
                     {
                         Debug.WriteLine("ReadTagAsync failed!");
                         break;
                     }
-                  
+
                     if (tag == null)
                         break;
 
@@ -97,13 +98,13 @@ namespace MediaPlay
                         {
 
                             VideoTagQueue.Enqueue((VideoTag)tag);
-                            Debug.WriteLine($"Video Enqueue length: {VideoTagQueue.Count}");
+                            //Debug.WriteLine($"Video Enqueue length: {VideoTagQueue.Count}");
                         }
                         else if (tag.Type == TagType.Audio)
                         {
 
                             AudioTagQueue.Enqueue((AudioTag)tag);
-                            Debug.WriteLine($"Audio Enqueue length: {AudioTagQueue.Count}");
+                            //Debug.WriteLine($"Audio Enqueue length: {AudioTagQueue.Count}");
                         }
                         else if (tag.Type == TagType.Script)
                         {
@@ -117,10 +118,10 @@ namespace MediaPlay
                     }
                     if (!IsAlive)
                     {
-                        if ((AudioTagQueue.Count) > 10)
-                            await Task.Delay(50);
+                        if ((AudioTagQueue.Count) >10)
+                            await Task.Delay(30);
                         else
-                            await Task.Delay(1);
+                            await Task.Delay(5);
                     }
 
                 }
@@ -135,18 +136,10 @@ namespace MediaPlay
         {
 
             VideoTag tag = null;
-            Debug.WriteLine($"Video Dequeue length: {VideoTagQueue.Count}");
+            //Debug.WriteLine($"Video Dequeue length: {VideoTagQueue.Count}");
             SpinWait.SpinUntil(() => !VideoTagQueue.IsEmpty);
-            VideoTagQueue.TryDequeue(out tag);
-            if (tag == null)
-            {
-
-            }
-            if (tag.data == null)
-            {
-
-            }
-            //if (TagQueue.Count > 50)
+            VideoTagQueue.TryDequeue(out tag);       
+            //if (VideoTagQueue.Count > 50)
             //{
             //    tag.PtsInterval = tag.PtsInterval > 0 ? 0 : tag.PtsInterval;
             //}
@@ -156,7 +149,7 @@ namespace MediaPlay
         {
 
             AudioTag tag = null;
-            Debug.WriteLine($"Audio Dequeue length: {AudioTagQueue.Count}");
+            //Debug.WriteLine($"Audio Dequeue length: {AudioTagQueue.Count}");
             SpinWait.SpinUntil(() => !AudioTagQueue.IsEmpty);
             AudioTagQueue.TryDequeue(out tag);
             if (tag.data == null)
@@ -164,7 +157,7 @@ namespace MediaPlay
                 SpinWait.SpinUntil(() => !AudioTagQueue.IsEmpty);
                 AudioTagQueue.TryDequeue(out tag);
             }
-            //if (TagQueue.Count > 50)
+            //if (AudioTagQueue.Count > 50)
             //{
             //    tag.PtsInterval = tag.PtsInterval > 0 ? 0 : tag.PtsInterval;
             //}

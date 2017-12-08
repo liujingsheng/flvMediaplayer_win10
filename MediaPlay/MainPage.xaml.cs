@@ -210,7 +210,10 @@ namespace MediaPlay
             filePicker.FileTypeFilter.Add("*");
 
             StorageFile file = await filePicker.PickSingleFileAsync();
-            IRandomAccessStream readStream = await file.OpenAsync(FileAccessMode.Read);     
+            if (file == null)
+                return;
+            IRandomAccessStream readStream = await file.OpenAsync(FileAccessMode.Read);
+     
             var flvMSS = await FLVMSS.CreateMSSFromRandomAccessStream(readStream);
             if (flvMSS != null)
             {

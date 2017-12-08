@@ -20,22 +20,16 @@ namespace MediaPlay
 {
     public class FLVMSS
     {
-        private AudioStreamDescriptor audioStreamDescriptor;
-        private VideoStreamDescriptor videoStreamDescriptor;
-
-        private string videoCodecName;
-        private string audioCodecName;
-        private MediaStreamSource mss;
         // Properties
-        public AudioStreamDescriptor AudioDescriptor => audioStreamDescriptor;
-        public VideoStreamDescriptor VideoDescriptor => videoStreamDescriptor;
-        public string VideoCodecName => videoCodecName;
-        public string AudioCodecName => audioCodecName;
-        FlvSampleProvider _sampleProvider;
-        StreamWebSocket _ws;
-        DataReader _reader;
-        FlvStreamParser _flvStreamParser;
-        private SpinLock spinLock = new SpinLock();
+        public AudioStreamDescriptor AudioDescriptor => _audioStreamDescriptor;
+        public VideoStreamDescriptor VideoDescriptor => _videoStreamDescriptor;
+        private FlvSampleProvider _sampleProvider;
+        private StreamWebSocket _ws;
+        private DataReader _reader;
+        private FlvStreamParser _flvStreamParser;
+        private AudioStreamDescriptor _audioStreamDescriptor;
+        private VideoStreamDescriptor _videoStreamDescriptor;
+        private MediaStreamSource _mss;
         private FLVMSS()
         {
         }
@@ -67,29 +61,29 @@ namespace MediaPlay
         {
 
             var reader = new DataReader(stream);
-            return await CreateMSSFromRandomDataReader(reader,true);
+            return await CreateMSSFromRandomDataReader(reader, true);
 
         }
-        public static async Task<FLVMSS> CreateMSSFromRandomDataReader(DataReader reader, bool isAlive=false)
+        public static async Task<FLVMSS> CreateMSSFromRandomDataReader(DataReader reader, bool isLive = false)
         {
             var flvmss = new FLVMSS();
             flvmss._reader = reader;
             flvmss._flvStreamParser = new FlvStreamParser(flvmss._reader);
             flvmss._sampleProvider = new FlvSampleProvider(flvmss._flvStreamParser);
-            flvmss._sampleProvider.IsAlive = isAlive;
-           var header = await flvmss._sampleProvider.ReadFlvHeaderAsync();
-            flvmss._sampleProvider.StartQueueTags();
-            if (header == null)
+            flvmss._sampleProvider.IsAlive = isLive;
+            var header = await flvmss._sampleProvider.ReadFlvHeaderAsync();
+         
+            if (header == null||!header.IsFlv)
             {
                 Debug.WriteLine("flv header error!");
                 return null;
 
             }
+            flvmss._sampleProvider.StartQueueTags();
             if (header.HasVideo)
             {
                 SpinWait.SpinUntil(() => flvmss._flvStreamParser.VideoCodecType != VideoCodecType.Unknow);
                 flvmss.CreateVideoStreamDescriptor(flvmss._flvStreamParser.VideoCodecType);
-
             }
 
             if (header.HasAudio)
@@ -99,7 +93,7 @@ namespace MediaPlay
                 flvmss.CreateAudioStreamDescriptor(flvmss._flvStreamParser.AudioCodecType, audioinfo.SampleRate, audioinfo.ChannleCount, 0);
             }
 
-            bool result = flvmss.InitializeFLVMSS(isAlive);
+            bool result = flvmss.InitializeFLVMSS(isLive);
             if (result)
             {
 
@@ -112,33 +106,31 @@ namespace MediaPlay
 
         }
 
-        private bool InitializeFLVMSS(bool isLive=false)
+        private bool InitializeFLVMSS(bool isLive = false)
         {
-            if (videoStreamDescriptor != null)
+            if (_videoStreamDescriptor != null)
             {
-                mss = new MediaStreamSource(videoStreamDescriptor);
-
+                _mss = new MediaStreamSource(_videoStreamDescriptor);
             }
             else
             {
                 return false;
             }
 
-            if (audioStreamDescriptor != null)
+            if (_audioStreamDescriptor != null)
             {
-                mss.AddStreamDescriptor(audioStreamDescriptor);
+                _mss.AddStreamDescriptor(_audioStreamDescriptor);
             }
 
-            mss.BufferTime = TimeSpan.FromMilliseconds(0);
-            mss.Starting += OnStarting;
-            mss.Closed += OnClosed;
-            mss.SampleRequested += OnSampleRequested;
-            mss.Paused += Mss_Paused;
-            mss.IsLive = isLive;
+            _mss.BufferTime = TimeSpan.FromMilliseconds(0);
+            _mss.Starting += OnStarting;
+            _mss.Closed += OnClosed;
+            _mss.SampleRequested += OnSampleRequested;
+            _mss.Paused += Mss_Paused;
+            _mss.IsLive = isLive;
             return true;
 
         }
-
 
 
         private void CreateAudioStreamDescriptor(AudioCodecType type, uint sampleRate, uint channelCount, uint bitRate)
@@ -146,7 +138,7 @@ namespace MediaPlay
             if (type == AudioCodecType.AAC)
             {
                 var audioProperties = AudioEncodingProperties.CreateAac(sampleRate, channelCount, bitRate);
-                audioStreamDescriptor = new AudioStreamDescriptor(audioProperties);
+                _audioStreamDescriptor = new AudioStreamDescriptor(audioProperties);
             }
             else
             {
@@ -161,7 +153,7 @@ namespace MediaPlay
             if (type == VideoCodecType.AVC)
             {
                 var videoProperties = VideoEncodingProperties.CreateH264();
-                videoStreamDescriptor = new VideoStreamDescriptor(videoProperties);
+                _videoStreamDescriptor = new VideoStreamDescriptor(videoProperties);
             }
             else
             {
@@ -172,18 +164,18 @@ namespace MediaPlay
 
         public MediaStreamSource GetMediaStreamSource()
         {
-            return mss;
+            return _mss;
         }
 
         private void Mss_Paused(MediaStreamSource sender, object args)
         {
-            spinLock.Enter(ref _sampleProvider.Paused);
-            spinLock.Exit();
+            _sampleProvider.Paused = true;
+          
 
 
         }
         public void OnStarting(MediaStreamSource sender, MediaStreamSourceStartingEventArgs args)
-        {
+        {          
             _sampleProvider.Paused = false;
             args.Request.SetActualStartPosition(new TimeSpan(0));
         }
@@ -206,10 +198,10 @@ namespace MediaPlay
         }
         private void OnClosed(MediaStreamSource sender, MediaStreamSourceClosedEventArgs args)
         {
-            mss.Closed -= OnClosed;
-            mss.Starting -= OnStarting;
-            mss.SampleRequested -= OnSampleRequested;
-            mss = null;
+            _mss.Closed -= OnClosed;
+            _mss.Starting -= OnStarting;
+            _mss.SampleRequested -= OnSampleRequested;
+            _mss = null;
 
             _sampleProvider?.cancellationTokenSource.Cancel();
             _sampleProvider = null;
@@ -217,13 +209,10 @@ namespace MediaPlay
             _reader?.Dispose();
             _reader = null;
 
-            if (_ws != null)
-            {
-                _ws.Close(1005, string.Empty);
-                _ws.Dispose();
-                _ws = null;
+            _ws?.Close(1005, string.Empty);
+            _ws?.Dispose();
+            _ws = null;
 
-            }
 
         }
 

@@ -146,13 +146,14 @@ namespace MediaPlay
 
     public enum VideoCodecType
     {
+        JPEG=1,
         Sorenson_H263 = 2,
         Screen_video = 3,
         On2_VP6 = 4,
         On2_VP6_with_alpha_channel = 5,
         Screen_video_version2 = 6,
         AVC = 7,
-        Unknow=0xff
+        Unknow = 0xff
     }
 
     public enum AudioCodecType
@@ -180,6 +181,16 @@ namespace MediaPlay
         Video = 9,
         Script = 0x12
     }
+    public enum FrameType
+    {
+
+        keyframe = 1,
+        interframe = 2,
+        disposable_inter_frame = 3,
+        generated_keyframe = 4,
+        video_info_or_command_frame = 5,
+        unknow = 0xff,
+    }
     public class FlvTag
     {
         public uint presize;
@@ -192,19 +203,7 @@ namespace MediaPlay
         public byte avcpaktype;
         public byte[] data;
         public uint PtsInterval;
-        public FlvTag() { }
-
-        public override string ToString()
-        {
-            return "#0: frame info"
-                + "\r\n#1: {"
-                + "\r\n  TagType: " + this.Type
-                + "\r\n  DataSize: " + this.DataSize
-                + "\r\n  StreamsID: " + this.StreamID
-
-                + "\r\n}"
-                ;
-        }
+        public FlvTag() { }     
 
         public TagType Type
         {
@@ -223,8 +222,6 @@ namespace MediaPlay
             get { return streamid; }
         }
 
-        public virtual string Info1 { get { return "-"; } }
-        public virtual string Info2 { get { return "-"; } }
     }
     public class AudioTag : FlvTag
     {
@@ -235,44 +232,20 @@ namespace MediaPlay
                 return (taginfo >> 4) & 0xF;
             }
         }
-        public string Codec
+        public AudioCodecType Codec
         {
             get
             {
                 int codec = (taginfo >> 4) & 0xF;
-                switch (codec)
+                if(codec>0x0F)
                 {
-                    case 0:
-                        return "Linear PCM, platform endian";
-                    case 1:
-                        return "ADPCM";
-                    case 2:
-                        return "MP3";
-                    case 3:
-                        return "Linear PCM, little endian";
-                    case 4:
-                        return "Nellymoser 16-kHz momo";
-                    case 5:
-                        return "Nellymoser 8-kHz momo";
-                    case 6:
-                        return "Nellymoser";
-                    case 7:
-                        return "G.711 A-law logarithmic PCM";
-                    case 8:
-                        return "G.711 mu-law logarithmic PCM";
-                    case 9:
-                        return "(reserved)";
-                    case 10:
-                        return "AAC";
-                    case 11:
-                        return "Speex";
-                    case 14:
-                        return "MP3 8-kHz";
-                    case 15:
-                        return "Device-specific sound";
-                    default:
-                        return "(unrecognized #" + codec + ")";
+                    return AudioCodecType.Unknow;
                 }
+                else
+                {
+                    return (AudioCodecType)codec;
+                }
+           
             }
         }
         public int Sample
@@ -314,58 +287,27 @@ namespace MediaPlay
                 return taginfo & 0x1;
             }
         }
-        public override string Info1 { get { return Codec; } }
+
 
     }
     public class VideoTag : FlvTag
     {
-        public string FrameType
+        public FrameType FrameType
         {
             get
             {
                 int type = (taginfo >> 4) & 0xF;
-                switch (type)
-                {
-                    case 1:
-                        return "keyframe";
-                    case 2:
-                        return "inter frame";
-                    case 3:
-                        return "disposable inter frame";
-                    case 4:
-                        return "generated keyframe";
-                    case 5:
-                        return "video info/command frame";
-                    default:
-                        return "(unrecognized #" + type + ")";
-                }
+                return type > 5 ? FrameType.unknow : (FrameType)type;
             }
         }
-        public string Codec
+        public VideoCodecType Codec
         {
             get
             {
                 int codec = taginfo & 0xF;
-                switch (codec)
-                {
-                    case 1:
-                        return "JPEG (currently unused)";
-                    case 2:
-                        return "H.263";
-                    case 3:
-                        return "Screen video";
-                    case 4:
-                        return "On2 VP6";
-                    case 5:
-                        return "On2 VP6 with alpha channel";
-                    case 6:
-                        return "Screen video version 2";
-                    case 7:
-                        return "H.264";
-                    default:
-                        return "(unrecognized #" + codec + ")";
-                }
+                return codec > 7 ? VideoCodecType.Unknow : (VideoCodecType)codec;
             }
+            
         }
         public double CodecId
         {
@@ -378,8 +320,7 @@ namespace MediaPlay
         {
             get { return avcpaktype; }
         }
-        public override string Info1 { get { return Codec; } }
-        public override string Info2 { get { return FrameType; } }
+   
 
     }
     public class ScriptTag : FlvTag
@@ -400,7 +341,7 @@ namespace MediaPlay
             }
             return str;
         }
-        public override string Info2 { get { return Values.Count + " 元素"; } }
+        public  string Info2 { get { return Values.Count + " 元素"; } }
 
         public bool TryGet(string key, out object o)
         {
@@ -496,8 +437,8 @@ namespace MediaPlay
         public FLVHeader Header;
         public byte[] SPSPPS;
         public AudioInfo AudioInfo;
-        public VideoCodecType VideoCodecType=VideoCodecType.Unknow;
-        public AudioCodecType AudioCodecType=AudioCodecType.Unknow;
+        public VideoCodecType VideoCodecType = VideoCodecType.Unknow;
+        public AudioCodecType AudioCodecType = AudioCodecType.Unknow;
 
         public FlvStreamParser(IInputStream stream)
         {
@@ -526,7 +467,7 @@ namespace MediaPlay
 
             FlvTag tag = null;
             var loadsize = await _reader.LoadAsync(4);
-        
+
             var presize = _reader.ReadUInt32();
             await _reader.LoadAsync(11);
             int type = _reader.ReadByte();
@@ -603,7 +544,7 @@ namespace MediaPlay
                         _reader.ReadBytes(payload);
                         AudioInfo audioInfo = new MediaPlay.AudioInfo();
                         audioInfo.SetData(payload);
-                        this.AudioInfo = audioInfo;
+                        AudioInfo = audioInfo;
 
                     }
                     else
@@ -619,18 +560,16 @@ namespace MediaPlay
                     throw new Exception("Unsuport Audio Codec, not AAC");
                 }
 
-
-
             }
             else if (tag is VideoTag)
             {
                 tag.taginfo = _reader.ReadByte();
                 var taga = tag as VideoTag;
-                if(VideoCodecType == VideoCodecType.Unknow)
+                if (VideoCodecType == VideoCodecType.Unknow)
                 {
                     VideoCodecType = (VideoCodecType)(taga.CodecId);
-                }           
-                if(VideoCodecType==VideoCodecType.AVC)
+                }
+                if (VideoCodecType == VideoCodecType.AVC)
                 {
                     tag.avcpaktype = _reader.ReadByte();
                     var compositionTime = ReadUI24(_reader);
@@ -664,7 +603,7 @@ namespace MediaPlay
                 {
                     throw new Exception("Unsuport Video Codec, not Avc");
                 }
-              
+
             }
             return tag;
 
