@@ -118,10 +118,10 @@ namespace MediaPlay
                     }
                     if (!IsAlive)
                     {
-                        if ((AudioTagQueue.Count) >10)
-                            await Task.Delay(30);
+                        if ((AudioTagQueue.Count) > 20)
+                            Task.Delay(30).Wait();
                         else
-                            await Task.Delay(5);
+                            Task.Delay(5).Wait();
                     }
 
                 }
@@ -130,6 +130,7 @@ namespace MediaPlay
 
             }, cancellationTokenSource.Token);
 
+       
 
         }
         public VideoTag PopVideoTag()

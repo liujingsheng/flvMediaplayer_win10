@@ -33,7 +33,7 @@ using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
 
-// https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x804 上介绍了“空白页”项模板
+
 
 namespace MediaPlay
 {
@@ -266,16 +266,12 @@ namespace MediaPlay
         {
 
             mss?.NotifyError(MediaStreamSourceErrorStatus.Other);
-
             mediaElement.SetMediaPlayer(null);
-
-
 
         }
 
         private void PauseButton_Click(object sender, RoutedEventArgs e)
         {
-
             mediaElement.MediaPlayer?.Pause();
         }
 
